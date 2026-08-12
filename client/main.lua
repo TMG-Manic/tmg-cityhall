@@ -12,6 +12,7 @@ local blips = {}
 
 -- Functions
 
+-- Returns the index into Config.Cityhalls of the hall nearest the cached playerCoords.
 local function getClosestHall()
     local distance = #(playerCoords - Config.Cityhalls[1].coords)
     local closest = 1
@@ -26,6 +27,7 @@ local function getClosestHall()
     return closest
 end
 
+-- Returns the index into Config.DrivingSchools of the school nearest the cached playerCoords.
 local function getClosestSchool()
     local distance = #(playerCoords - Config.DrivingSchools[1].coords)
     local closest = 1
@@ -40,6 +42,8 @@ local function getClosestSchool()
     return closest
 end
 
+-- Creates a map blip from an options table (coords, sprite, display, scale, colour, shortRange, title).
+-- Raises an error if coords is missing or not a vector3/table. Returns the blip handle.
 local function createBlip(options)
     if not options.coords or type(options.coords) ~= 'table' and type(options.coords) ~= 'vector3' then return error(('createBlip() expected coords in a vector3 or table but received %s'):format(options.coords)) end
     local blip = AddBlipForCoord(options.coords.x, options.coords.y, options.coords.z)
@@ -54,6 +58,7 @@ local function createBlip(options)
     return blip
 end
 
+-- Removes every blip this resource created and empties the tracking table.
 local function deleteBlips()
     if not next(blips) then return end
     for i = 1, #blips do
@@ -65,6 +70,7 @@ local function deleteBlips()
     blips = {}
 end
 
+-- Creates blips for every cityhall and driving school that has showBlip enabled, tracking them in `blips`.
 local function initBlips()
     for i = 1, #Config.Cityhalls do
         local hall = Config.Cityhalls[i]
@@ -96,6 +102,7 @@ local function initBlips()
     end
 end
 
+-- Opens the top-level cityhall menu (ID card / job center / close) through tmg-menu.
 local function openCityhallMenu()
     local mainMenu = {
         {
@@ -128,6 +135,8 @@ local function openCityhallMenu()
     exports['tmg-menu']:openMenu(mainMenu)
 end
 
+-- Asks the server which licenses the player may buy at the closest cityhall, then opens a menu
+-- with one purchase entry per license (each showing its cost).
 local function openIdentityMenu()
     TMGCore.Functions.TriggerCallback('tmg-cityhall:server:getIdentityData', function(licenses)
         local identityMenu = {
@@ -161,6 +170,7 @@ local function openIdentityMenu()
     end, closestCityhall)
 end
 
+-- Fetches the list of city-hall hireable jobs from the server and opens a menu where each entry applies for that job.
 local function openJobMenu()
     TMGCore.Functions.TriggerCallback('tmg-cityhall:server:receiveJobs', function(jobs)
         local jobMenu = {
@@ -193,6 +203,9 @@ local function openJobMenu()
     end)
 end
 
+-- Spawns the configured cityhall/driving-school peds (frozen, invincible, running their scenario) and stores
+-- each handle on Config.Peds[i].pedHandle. Depending on Config.UseTarget it either registers tmg-target
+-- options on the ped or builds a BoxZone that toggles the inRange flags and draws the [E] prompt.
 local function spawnPeds()
     if not Config.Peds or not next(Config.Peds) or pedsSpawned then return end
     for i = 1, #Config.Peds do
@@ -270,6 +283,7 @@ local function spawnPeds()
     pedsSpawned = true
 end
 
+-- Deletes every ped spawned by spawnPeds and clears the pedsSpawned flag. Does not remove target zones.
 local function deletePeds()
     if not Config.Peds or not next(Config.Peds) or not pedsSpawned then return end
     for i = 1, #Config.Peds do
@@ -283,38 +297,48 @@ end
 
 -- Events
 
+-- Refreshes the cached PlayerData and spawns the cityhall peds once the character finishes loading.
 RegisterNetEvent('TMGCore:Client:OnPlayerLoaded', function()
     PlayerData = TMGCore.Functions.GetPlayerData()
     isLoggedIn = true
     spawnPeds()
 end)
 
+-- Clears the cached PlayerData and removes the spawned peds when the player logs out of a character.
 RegisterNetEvent('TMGCore:Client:OnPlayerUnload', function()
     PlayerData = {}
     isLoggedIn = false
     deletePeds()
 end)
 
+-- Keeps the local PlayerData cache in sync whenever the core pushes updated player state.
 RegisterNetEvent('TMGCore:Player:SetPlayerData', function(val)
     PlayerData = val
 end)
 
+-- Menu-navigation hook: lets a tmg-menu "Go Back" entry reopen the main cityhall menu.
 RegisterNetEvent('tmg-cityhall:client:openCityhallMenu', function()
     openCityhallMenu()
 end)
 
+-- Menu-navigation hook for the "ID Card" entry; opens the license purchase menu.
 RegisterNetEvent('tmg-cityhall:client:openIdentityMenu', function()
     openIdentityMenu()
 end)
 
+-- Menu-navigation hook for the "Job Center" entry; opens the job application menu.
 RegisterNetEvent('tmg-cityhall:client:openJobMenu', function()
     openJobMenu()
 end)
 
+-- Asks the server to hand out the framework's configured starter items (ID card, driver license, etc).
 RegisterNetEvent('tmg-cityhall:client:getIds', function()
     TriggerServerEvent('tmg-cityhall:server:getIDs')
 end)
 
+-- Handles a license purchase pick. Checks the player is still in a cityhall zone and that the menu's
+-- quoted cost matches config, then asks the server to charge and issue the item.
+-- The success notification fires optimistically, before the server confirms payment succeeded.
 RegisterNetEvent('tmg-cityhall:client:requestId', function(data)
     if inRangeCityhall then
         local license = Config.Cityhalls[closestCityhall].licenses[data.type]
@@ -329,6 +353,7 @@ RegisterNetEvent('tmg-cityhall:client:requestId', function(data)
     end
 end)
 
+-- Sends the chosen job to the server, passing the cityhall coords the server uses for its distance check.
 RegisterNetEvent('tmg-cityhall:client:applyJob', function(data)
     if inRangeCityhall then
         TriggerServerEvent('tmg-cityhall:server:ApplyJob', data.job, Config.Cityhalls[closestCityhall].coords)
@@ -337,6 +362,9 @@ RegisterNetEvent('tmg-cityhall:client:applyJob', function(data)
     end
 end)
 
+-- Fired on an online driving instructor's client. After a 2.5-4s delay, sends them an in-game phone
+-- mail about the waiting student (charinfo is the student's). Note the salutation gender is read from
+-- the local (instructor's) PlayerData, not from the passed-in student charinfo.
 RegisterNetEvent('tmg-cityhall:client:sendDriverEmail', function(charinfo)
     SetTimeout(math.random(2500, 4000), function()
         local gender = Lang:t('email.mr')
@@ -352,6 +380,7 @@ RegisterNetEvent('tmg-cityhall:client:sendDriverEmail', function(charinfo)
     end)
 end)
 
+-- Cleans up this resource's blips and spawned peds when it is stopped or restarted.
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     deleteBlips()
@@ -360,6 +389,8 @@ end)
 
 -- Threads
 
+-- Once per second while logged in, refreshes the cached ped/coords and recomputes which cityhall and
+-- driving school are closest. Other code reads closestCityhall / closestDrivingSchool from here.
 CreateThread(function()
     while true do
         if isLoggedIn then
@@ -372,6 +403,8 @@ CreateThread(function()
     end
 end)
 
+-- Startup thread: creates the map blips and peds. When Config.UseTarget is off it then polls for [E]
+-- to open the cityhall menu or request a driving test, sleeping 1s unless the player is in range.
 CreateThread(function()
     initBlips()
     spawnPeds()

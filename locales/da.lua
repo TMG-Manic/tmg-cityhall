@@ -1,3 +1,4 @@
+-- Danish translation strings for city hall errors, notifications, blip labels and driving-school emails.
 local Translations = {
     error = {
         not_in_range = 'Du er for langt væk fra jobcentret'

@@ -1,3 +1,4 @@
+-- Portuguese translation strings for city hall errors, notifications, blip labels and driving-school emails.
 local Translations = {
     error = {
         not_in_range = 'Encontra-se muito longe da camara municipal'

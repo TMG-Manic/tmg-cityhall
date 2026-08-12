@@ -1,3 +1,4 @@
+-- English (default/fallback) translation strings for city hall errors, notifications, blip labels and driving-school emails.
 local Translations = {
     error = {
         not_in_range = 'Too far from the city hall'
